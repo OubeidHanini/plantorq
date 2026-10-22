@@ -1,0 +1,29 @@
+# Go
+/bin/
+coverage.out
+*.test
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Web
+web/node_modules/
+web/dist/
+*.tsbuildinfo
+
+# Local data
+*.db
+
+# Editors
+.idea/
+.vscode/
+
+# Local configuration and secrets (the *.example files are committed)
+.env
+*.env
+!deploy/k8s/overlays/kind/demo-secrets.env
