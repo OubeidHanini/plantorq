@@ -1,0 +1,19 @@
+[project]
+name = "plantorq-simulator"
+version = "1.0.0"
+description = "Simulated Modbus TCP plant floor for Plantorq"
+requires-python = ">=3.11"
+dependencies = ["pymodbus==2.5.3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
