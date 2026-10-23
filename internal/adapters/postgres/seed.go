@@ -48,7 +48,10 @@ func (db *DB) SeedDemo(ctx context.Context, hash string) error {
 		}{
 			{"Spindle overheat", "", "temperature", ">", 70, 10, "critical"},
 			{"High vibration", "", "vibration", ">", 7, 5, "warning"},
-			{"Anomaly detected", "", "anomaly_score", ">=", 0.8, 0, "warning"},
+			// Tuned on simulated data: normal load noise never stays >= 0.8 for
+			// more than 1s, a bearing fault holds it for 5-6s. Requiring 2s
+			// (3 consecutive samples) separates them with margin on both sides.
+			{"Anomaly detected", "", "anomaly_score", ">=", 0.8, 2, "warning"},
 		}
 		for _, r := range rules {
 			batch.Queue(`INSERT INTO alert_rules (tenant_id, name, machine_slug, metric, operator, threshold, for_seconds, severity)
