@@ -44,7 +44,9 @@ func Dial(log *slog.Logger, o Options) *Client {
 		SetAutoReconnect(true).
 		SetConnectRetry(true).
 		SetConnectRetryInterval(2 * time.Second).
-		SetMaxReconnectInterval(30 * time.Second).
+		// Capped low on purpose: the edge agent buffers while offline, and
+		// every extra second of backoff delays the replay.
+		SetMaxReconnectInterval(10 * time.Second).
 		SetOrderMatters(false)
 
 	opts.SetOnConnectHandler(func(c paho.Client) {
