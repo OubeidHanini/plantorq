@@ -102,7 +102,7 @@ var _ ingest.Metrics = (*Ingest)(nil)
 
 func NewIngest(reg prometheus.Registerer) *Ingest {
 	f := promauto.With(reg)
-	return &Ingest{
+	return (&Ingest{
 		written: f.NewCounter(prometheus.CounterOpts{
 			Name: "plantorq_ingestor_readings_written_total", Help: "Readings persisted.",
 		}),
@@ -112,7 +112,16 @@ func NewIngest(reg prometheus.Registerer) *Ingest {
 		flush: f.NewHistogram(prometheus.HistogramOpts{
 			Name: "plantorq_ingestor_flush_duration_seconds", Help: "Batch write latency.",
 		}),
+	}).initReasons("queue_full", "write_failed")
+}
+
+// initReasons pre-creates the known drop reasons at zero, so dashboards and
+// alerts see "0 dropped" instead of a missing series.
+func (m *Ingest) initReasons(reasons ...string) *Ingest {
+	for _, r := range reasons {
+		m.dropped.WithLabelValues(r)
 	}
+	return m
 }
 
 func (m *Ingest) Written(n int)                 { m.written.Add(float64(n)) }

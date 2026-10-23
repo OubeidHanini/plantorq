@@ -50,3 +50,10 @@ func TestRulesMetrics(t *testing.T) {
 		t.Fatalf("evaluated = %v, want 1", got)
 	}
 }
+
+func TestIngestDropReasonsStartAtZero(t *testing.T) {
+	m := NewIngest(prometheus.NewRegistry())
+	if n := testutil.CollectAndCount(m.dropped); n != 2 {
+		t.Fatalf("expected both drop reasons exported before any drop, got %d series", n)
+	}
+}
