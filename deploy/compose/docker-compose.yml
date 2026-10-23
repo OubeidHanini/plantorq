@@ -4,6 +4,8 @@
 #   docker compose -f deploy/compose/docker-compose.yml up --build
 #
 # Dashboard:  http://localhost:3000  (admin@acme.io / $SEED_DEMO_PASSWORD)
+# Grafana:    http://localhost:3001/d/plantorq-platform  (anonymous read-only)
+# Prometheus: http://localhost:9090
 #
 # Every value comes from .env (next to this file). Secrets have no default:
 # Compose refuses to start until they are set, so none is ever committed.
@@ -115,7 +117,35 @@ services:
     ports: ["127.0.0.1:3000:8080"]
     depends_on: [api]
 
+  # --- Observability: the platform monitors itself -------------------------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ../observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports: ["127.0.0.1:9090:9090"]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    restart: unless-stopped
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in deploy/compose/.env}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/plantorq-platform.json
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["127.0.0.1:3001:3000"]
+    depends_on: [prometheus]
+
 volumes:
+  prometheus-data:
   mosquitto-data:
   postgres-data:
   influxdb-data:

@@ -1,0 +1,9 @@
+apiVersion: 1
+providers:
+  - name: plantorq
+    folder: Plantorq
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false # dashboards are code: change the JSON in Git
+    options:
+      path: /var/lib/grafana/dashboards

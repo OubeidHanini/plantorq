@@ -1,0 +1,17 @@
+# Packages the observability config as ConfigMaps for Kubernetes. The same
+# files are mounted directly by Docker Compose: one source of truth.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+configMapGenerator:
+  - name: prometheus-config
+    files:
+      - prometheus.yml=prometheus/prometheus-k8s.yml
+      - prometheus/alerts.yml
+  - name: grafana-datasources
+    files: [grafana/provisioning/datasources/datasources.yml]
+  - name: grafana-dashboard-provider
+    files: [grafana/provisioning/dashboards/dashboards.yml]
+  - name: grafana-dashboards
+    files: [grafana/dashboards/plantorq-platform.json]
+generatorOptions:
+  disableNameSuffixHash: true

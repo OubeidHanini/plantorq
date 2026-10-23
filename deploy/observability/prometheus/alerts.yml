@@ -1,0 +1,54 @@
+# Alerts on the platform itself ("who monitors the monitoring?").
+# Machine alerts are business rules handled by the rules engine; these catch
+# failures of the pipeline that would make those rules go silent.
+groups:
+  - name: plantorq-platform
+    rules:
+      - alert: PlantorqServiceDown
+        expr: up{job=~"edge-agent|ingestor|rules-engine|api|analytics"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.job }} is not reachable"
+          description: "Prometheus has failed to scrape {{ $labels.job }} for more than a minute."
+
+      - alert: PlantorqEdgeBrokerDisconnected
+        expr: plantorq_agent_broker_connected == 0
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "Edge agent lost its MQTT connection"
+          description: "Readings are being buffered on disk and will be replayed on reconnect."
+
+      - alert: PlantorqEdgeBufferGrowing
+        expr: plantorq_agent_buffer_depth > 1000
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "Offline buffer holds {{ $value }} readings"
+          description: "The edge agent cannot deliver data; the buffer evicts the oldest readings when full."
+
+      - alert: PlantorqIngestorDroppingReadings
+        expr: sum by (reason) (increase(plantorq_ingestor_readings_dropped_total[5m])) > 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Ingestor dropped readings ({{ $labels.reason }})"
+          description: "queue_full means the ingestor needs more replicas; write_failed points at InfluxDB."
+
+      - alert: PlantorqMachineUnreachable
+        expr: sum by (machine) (rate(plantorq_agent_polls_total{result="error"}[5m])) > 0
+          unless sum by (machine) (rate(plantorq_agent_polls_total{result="ok"}[5m])) > 0
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "Machine {{ $labels.machine }} does not answer"
+          description: "Every poll in the last 5 minutes failed (press-p04 does this on purpose in the demo)."
+
+      - alert: PlantorqAPIHighLatency
+        expr: histogram_quantile(0.95, sum by (le) (rate(plantorq_api_request_duration_seconds_bucket[5m]))) > 0.5
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "API p95 latency is {{ $value | humanizeDuration }}"
+          description: "95% of API requests should complete in under 500 ms."
