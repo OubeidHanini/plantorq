@@ -63,6 +63,7 @@ services:
       <<: *go-env
       AGENT_CONFIG: /etc/plantorq/agent.yaml
       MODBUS_ADDRESS: simulator:5020
+      OPCUA_ENDPOINT: opc.tcp://simulator:4840
     volumes:
       - ../config/agent.yaml:/etc/plantorq/agent.yaml:ro
       - agent-buffer:/data

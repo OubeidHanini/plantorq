@@ -26,10 +26,15 @@ mqtt:
   broker: tcp://mosquitto:1883
   password: ${TEST_MQTT_PASSWORD}
 profiles:
-  cnc:
-    - { name: temperature, address: 0, scale: 0.1 }
+  modbus:
+    cnc:
+      - { name: temperature, address: 0, scale: 0.1 }
+  opcua:
+    robot:
+      - { name: temperature, node_id: "ns=2;s=robot-07.temperature" }
 machines:
   - { id: cnc-01, protocol: modbus-tcp, address: "sim:5020", unit_id: 1, profile: cnc }
+  - { id: robot-07, protocol: opcua, endpoint: "opc.tcp://sim:4840", profile: robot }
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +46,7 @@ machines:
 		t.Errorf("defaults not applied: %+v", cfg.Polling)
 	}
 	machines, err := buildMachines(cfg)
-	if err != nil || len(machines) != 1 {
+	if err != nil || len(machines) != 2 {
 		t.Fatalf("buildMachines: %v", err)
 	}
 }
@@ -51,13 +56,16 @@ func TestValidateReportsAllErrors(t *testing.T) {
 tenant: "Bad Tenant"
 gateway: gw
 machines:
-  - { id: cnc-01, profile: missing }
-  - { id: cnc-01, profile: missing }
+  - { id: cnc-01, protocol: modbus-tcp, address: "sim:5020", profile: missing }
+  - { id: cnc-01, protocol: modbus-tcp, address: "sim:5020", profile: missing }
+  - { id: robot-07, protocol: opcua, profile: robot }
+  - { id: press-01, protocol: profinet }
 `))
 	if err == nil {
 		t.Fatal("expected validation errors")
 	}
-	for _, want := range []string{"tenant", "mqtt.broker", "unknown profile", "declared twice"} {
+	for _, want := range []string{"tenant", "mqtt.broker", "unknown modbus profile", "declared twice",
+		"endpoint is required", "unsupported protocol"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
 		}

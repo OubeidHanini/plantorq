@@ -7,6 +7,6 @@ COPY src ./src
 RUN pip install --no-cache-dir .
 
 USER app
-EXPOSE 5020
+EXPOSE 5020 4840
 ENV PYTHONUNBUFFERED=1
 CMD ["python", "-m", "plantorq_simulator"]

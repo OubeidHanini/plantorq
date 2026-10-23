@@ -7,6 +7,7 @@ require (
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/goburrow/modbus v0.1.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/gopcua/opcua v0.9.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/prometheus/client_golang v1.25.0

@@ -1,9 +1,9 @@
 [project]
 name = "plantorq-simulator"
 version = "1.0.0"
-description = "Simulated Modbus TCP plant floor for Plantorq"
+description = "Simulated plant floor (Modbus TCP and OPC UA) for Plantorq"
 requires-python = ">=3.11"
-dependencies = ["pymodbus==2.5.3"]
+dependencies = ["pymodbus==2.5.3", "asyncua>=1.1,<2"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

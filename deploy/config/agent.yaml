@@ -17,21 +17,35 @@ buffer:
   path: /data/buffer.db
   max_items: 100000
 
-# Register profiles: how a device type lays out its holding registers.
-# value = raw * scale + offset
+# Profiles describe how a device type exposes its values, per protocol.
 profiles:
-  standard:
-    - { name: temperature, address: 0, scale: 0.1,  unit: "°C" }
-    - { name: power_kw,    address: 1, scale: 0.01, unit: kW }
-    - { name: vibration,   address: 2, scale: 0.01, unit: mm/s }
-    - { name: current,     address: 3, scale: 0.1,  unit: A }
-    - { name: spindle_rpm, address: 4, scale: 1,    unit: rpm }
-    - { name: running,     address: 5, scale: 1 }
+  # Modbus: holding registers, value = raw * scale + offset
+  modbus:
+    standard:
+      - { name: temperature, address: 0, scale: 0.1,  unit: "°C" }
+      - { name: power_kw,    address: 1, scale: 0.01, unit: kW }
+      - { name: vibration,   address: 2, scale: 0.01, unit: mm/s }
+      - { name: current,     address: 3, scale: 0.1,  unit: A }
+      - { name: spindle_rpm, address: 4, scale: 1,    unit: rpm }
+      - { name: running,     address: 5, scale: 1 }
+  # OPC UA: typed variables, read by node id; values arrive in engineering
+  # units, so no scaling is needed.
+  opcua:
+    welding-robot:
+      - { name: temperature, node_id: "ns=2;s=robot-07.temperature", unit: "°C" }
+      - { name: power_kw,    node_id: "ns=2;s=robot-07.power_kw",    unit: kW }
+      - { name: vibration,   node_id: "ns=2;s=robot-07.vibration",   unit: mm/s }
+      - { name: current,     node_id: "ns=2;s=robot-07.current",     unit: A }
+      - { name: running,     node_id: "ns=2;s=robot-07.running" }
 
 machines:
   - { id: cnc-01,    protocol: modbus-tcp, address: "${MODBUS_ADDRESS}", unit_id: 1, profile: standard }
   - { id: cnc-02,    protocol: modbus-tcp, address: "${MODBUS_ADDRESS}", unit_id: 2, profile: standard }
-  - { id: robot-07,  protocol: modbus-tcp, address: "${MODBUS_ADDRESS}", unit_id: 3, profile: standard }
   - { id: comp-c2,   protocol: modbus-tcp, address: "${MODBUS_ADDRESS}", unit_id: 4, profile: standard }
   # Not served by the simulator on purpose: demonstrates offline handling.
   - { id: press-p04, protocol: modbus-tcp, address: "${MODBUS_ADDRESS}", unit_id: 5, profile: standard }
+  - id: robot-07
+    protocol: opcua
+    endpoint: "${OPCUA_ENDPOINT}"
+    profile: welding-robot
+    security: { policy: None, mode: None } # production: Basic256Sha256 + SignAndEncrypt

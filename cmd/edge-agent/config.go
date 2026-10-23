@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/OubeidHanini/plantorq/internal/adapters/modbus"
+	"github.com/OubeidHanini/plantorq/internal/adapters/opcua"
 	"github.com/OubeidHanini/plantorq/internal/domain/telemetry"
 )
 
@@ -30,16 +31,29 @@ type fileConfig struct {
 		Path     string `yaml:"path"`
 		MaxItems int    `yaml:"max_items"`
 	} `yaml:"buffer"`
-	Profiles map[string][]modbus.Register `yaml:"profiles"`
-	Machines []machineConfig              `yaml:"machines"`
+	Profiles profiles        `yaml:"profiles"`
+	Machines []machineConfig `yaml:"machines"`
+}
+
+// profiles describe how a device type exposes its values, per protocol:
+// register maps for Modbus, node ids for OPC UA.
+type profiles struct {
+	Modbus map[string][]modbus.Register `yaml:"modbus"`
+	OPCUA  map[string][]opcua.Node      `yaml:"opcua"`
 }
 
 type machineConfig struct {
 	ID       string `yaml:"id"`
 	Protocol string `yaml:"protocol"`
-	Address  string `yaml:"address"`
-	UnitID   byte   `yaml:"unit_id"`
 	Profile  string `yaml:"profile"`
+
+	// Modbus TCP
+	Address string `yaml:"address"`
+	UnitID  byte   `yaml:"unit_id"`
+
+	// OPC UA
+	Endpoint string         `yaml:"endpoint"`
+	Security opcua.Security `yaml:"security"`
 }
 
 func loadConfig(path string) (*fileConfig, error) {
@@ -94,13 +108,18 @@ func (c *fileConfig) validate() error {
 	}
 	seen := map[string]bool{}
 	for _, m := range c.Machines {
+		p, known := protocols[m.Protocol]
 		switch {
 		case !telemetry.ValidSlug(m.ID):
 			errs = append(errs, fmt.Errorf("machine id %q is invalid", m.ID))
 		case seen[m.ID]:
 			errs = append(errs, fmt.Errorf("machine %q is declared twice", m.ID))
-		case len(c.Profiles[m.Profile]) == 0:
-			errs = append(errs, fmt.Errorf("machine %q uses unknown profile %q", m.ID, m.Profile))
+		case !known:
+			errs = append(errs, fmt.Errorf("machine %q: unsupported protocol %q", m.ID, m.Protocol))
+		default:
+			if err := p.validate(m, c); err != nil {
+				errs = append(errs, fmt.Errorf("machine %q: %w", m.ID, err))
+			}
 		}
 		seen[m.ID] = true
 	}

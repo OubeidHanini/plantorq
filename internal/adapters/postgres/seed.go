@@ -33,7 +33,7 @@ func (db *DB) SeedDemo(ctx context.Context, hash string) error {
 		for _, m := range [][4]string{
 			{"cnc-01", "CNC-01", "CNC mill", "Modbus TCP"},
 			{"cnc-02", "CNC-02", "CNC mill", "Modbus TCP"},
-			{"robot-07", "Robot R-07", "Welding robot", "Modbus TCP"},
+			{"robot-07", "Robot R-07", "Welding robot", "OPC UA"},
 			{"comp-c2", "Compressor C-2", "Air compressor", "Modbus TCP"},
 			{"press-p04", "Press P-04", "Hydraulic press", "Modbus TCP"},
 		} {
