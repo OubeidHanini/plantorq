@@ -184,5 +184,12 @@ jobs:
         if: failure()
         run: |
           kubectl -n plantorq get pods -o wide
-          kubectl -n plantorq logs deploy/api --tail=50 || true
-          kubectl -n plantorq logs deploy/edge-agent --tail=50 || true
+          echo "::group::Warning events (config errors, image pulls, failed probes)"
+          kubectl -n plantorq get events --field-selector type=Warning --sort-by=.lastTimestamp || true
+          echo "::endgroup::"
+          for pod in $(kubectl -n plantorq get pods --no-headers | awk '$2 !~ /^([0-9]+)\/\1$/ {print $1}'); do
+            echo "::group::Not ready: $pod"
+            kubectl -n plantorq describe pod "$pod" | sed -n '/^Events:/,$p'
+            kubectl -n plantorq logs "$pod" --tail=50 --all-containers || true
+            echo "::endgroup::"
+          done
