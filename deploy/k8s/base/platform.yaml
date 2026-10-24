@@ -1,0 +1,175 @@
+# Cloud-side Go services. Each runs non-root on a read-only filesystem and
+# exposes /healthz (liveness) and /readyz (readiness) on its ops port.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: api } }
+  template:
+    metadata:
+      labels: { app: api }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "9103" }
+    spec:
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: api
+          image: ghcr.io/oubeidhanini/plantorq-api:1.0.0
+          envFrom: [{ configMapRef: { name: plantorq-config } }]
+          env:
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: plantorq-secrets, key: DATABASE_URL } }
+            - name: JWT_SECRET
+              valueFrom: { secretKeyRef: { name: plantorq-secrets, key: JWT_SECRET } }
+            - name: SEED_DEMO_PASSWORD
+              valueFrom: { secretKeyRef: { name: plantorq-secrets, key: SEED_DEMO_PASSWORD, optional: true } }
+            - name: MQTT_USERNAME
+              valueFrom: { secretKeyRef: { name: plantorq-secrets, key: MQTT_USERNAME, optional: true } }
+            - name: MQTT_PASSWORD
+              valueFrom: { secretKeyRef: { name: plantorq-secrets, key: MQTT_PASSWORD, optional: true } }
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: ops, containerPort: 9103 }
+          livenessProbe: { httpGet: { path: /healthz, port: ops } }
+          readinessProbe: { httpGet: { path: /readyz, port: ops }, periodSeconds: 5 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: api }
+spec:
+  selector: { app: api }
+  ports: [{ name: http, port: 8080, targetPort: http }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: api }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: api }
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestor
+spec:
+  replicas: 2 # MQTT shared subscription spreads messages across replicas
+  selector: { matchLabels: { app: ingestor } }
+  template:
+    metadata:
+      labels: { app: ingestor }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "9101" }
+    spec:
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      terminationGracePeriodSeconds: 20 # time to flush the last batch
+      containers:
+        - name: ingestor
+          image: ghcr.io/oubeidhanini/plantorq-ingestor:1.0.0
+          envFrom: [{ configMapRef: { name: plantorq-config } }]
+          env:
+            - name: MQTT_USERNAME
+              valueFrom: { secretKeyRef: { name: plantorq-secrets, key: MQTT_USERNAME, optional: true } }
+            - name: MQTT_PASSWORD
+              valueFrom: { secretKeyRef: { name: plantorq-secrets, key: MQTT_PASSWORD, optional: true } }
+          ports: [{ name: ops, containerPort: 9101 }]
+          livenessProbe: { httpGet: { path: /healthz, port: ops } }
+          readinessProbe: { httpGet: { path: /readyz, port: ops }, periodSeconds: 5 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: ingestor }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: ingestor }
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+---
+# A single active evaluator keeps alert state in one place. The database's
+# "one open alert per rule and machine" index already makes firing
+# idempotent; scaling out would add tenant sharding (see docs/architecture.md).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rules-engine
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: rules-engine } }
+  template:
+    metadata:
+      labels: { app: rules-engine }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "9102" }
+    spec:
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: rules-engine
+          image: ghcr.io/oubeidhanini/plantorq-rules-engine:1.0.0
+          envFrom: [{ configMapRef: { name: plantorq-config } }]
+          env:
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: plantorq-secrets, key: DATABASE_URL } }
+            - name: MQTT_USERNAME
+              valueFrom: { secretKeyRef: { name: plantorq-secrets, key: MQTT_USERNAME, optional: true } }
+            - name: MQTT_PASSWORD
+              valueFrom: { secretKeyRef: { name: plantorq-secrets, key: MQTT_PASSWORD, optional: true } }
+          ports: [{ name: ops, containerPort: 9102 }]
+          livenessProbe: { httpGet: { path: /healthz, port: ops } }
+          readinessProbe: { httpGet: { path: /readyz, port: ops }, periodSeconds: 5 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: analytics } }
+  template:
+    metadata:
+      labels: { app: analytics }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "9104" }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: analytics
+          image: ghcr.io/oubeidhanini/plantorq-analytics:1.0.0
+          envFrom: [{ configMapRef: { name: plantorq-config } }]
+          env:
+            - name: MQTT_USERNAME
+              valueFrom: { secretKeyRef: { name: plantorq-secrets, key: MQTT_USERNAME, optional: true } }
+            - name: MQTT_PASSWORD
+              valueFrom: { secretKeyRef: { name: plantorq-secrets, key: MQTT_PASSWORD, optional: true } }
+          ports: [{ name: metrics, containerPort: 9104 }]
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }

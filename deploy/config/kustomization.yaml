@@ -1,0 +1,9 @@
+# Packages agent.yaml as a ConfigMap so Compose and Kubernetes share a single
+# source of truth for the edge agent configuration.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+configMapGenerator:
+  - name: edge-agent-config
+    files: [agent.yaml]
+generatorOptions:
+  disableNameSuffixHash: true

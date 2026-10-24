@@ -1,0 +1,89 @@
+# Plant-side workloads. In a real deployment the edge agent runs on a gateway
+# at the factory (often k3s); the simulator stands in for the machines.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simulator
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: simulator } }
+  template:
+    metadata: { labels: { app: simulator } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: simulator
+          image: ghcr.io/oubeidhanini/plantorq-simulator:1.0.0
+          ports:
+            - { name: modbus, containerPort: 5020 }
+            - { name: opcua, containerPort: 4840 }
+          readinessProbe: { tcpSocket: { port: 5020 } }
+          resources:
+            requests: { cpu: 20m, memory: 48Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: simulator }
+spec:
+  selector: { app: simulator }
+  ports:
+    - { name: modbus, port: 5020 }
+    - { name: opcua, port: 4840 }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: edge-agent-buffer }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 1Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge-agent
+spec:
+  replicas: 1
+  strategy: { type: Recreate } # the bbolt buffer file allows one writer
+  selector: { matchLabels: { app: edge-agent } }
+  template:
+    metadata:
+      labels: { app: edge-agent }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "9100" }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 65532 # makes the buffer volume writable for the nonroot user
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: edge-agent
+          image: ghcr.io/oubeidhanini/plantorq-edge-agent:1.0.0
+          envFrom: [{ configMapRef: { name: plantorq-config } }]
+          env:
+            - { name: AGENT_CONFIG, value: /etc/plantorq/agent.yaml }
+            - name: MQTT_USERNAME
+              valueFrom: { secretKeyRef: { name: plantorq-secrets, key: MQTT_USERNAME, optional: true } }
+            - name: MQTT_PASSWORD
+              valueFrom: { secretKeyRef: { name: plantorq-secrets, key: MQTT_PASSWORD, optional: true } }
+          ports: [{ name: ops, containerPort: 9100 }]
+          livenessProbe: { httpGet: { path: /healthz, port: ops } }
+          readinessProbe: { httpGet: { path: /readyz, port: ops } }
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: config, mountPath: /etc/plantorq, readOnly: true }
+            - { name: buffer, mountPath: /data }
+      volumes:
+        - name: config
+          configMap: { name: edge-agent-config }
+        - name: buffer
+          persistentVolumeClaim: { claimName: edge-agent-buffer }

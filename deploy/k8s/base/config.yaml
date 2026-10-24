@@ -1,0 +1,26 @@
+# Non-sensitive settings shared by the workloads (envFrom).
+#
+# The base deliberately contains no Secret: each overlay must provide one
+# named "plantorq-secrets" with the keys listed in ../secrets.env.example
+# (demo values for kind/CI in overlays/kind, a secret manager in production).
+# Workloads reference only the secret keys they need, key by key.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plantorq-config
+data:
+  LOG_LEVEL: info
+  MQTT_BROKER: tcp://mosquitto:1883
+  INFLUX_URL: http://influxdb:8086
+  INFLUX_DB: plantorq
+  # Edge agent device addresses (expanded into agent.yaml)
+  MODBUS_ADDRESS: simulator:5020
+  OPCUA_ENDPOINT: opc.tcp://simulator:4840
+  # Pipeline tuning
+  BATCH_SIZE: "500"
+  FLUSH_INTERVAL: 1s
+  QUEUE_SIZE: "20000"
+  RULE_RELOAD_INTERVAL: 15s
+  JWT_TTL: 12h
+  WATCHED_METRICS: vibration
+  WINDOW: "120"
