@@ -2,6 +2,9 @@
 # so they use the :dev tag and are never pulled from a registry.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# Must be repeated here: the base's namespace only applies to base resources,
+# so without it the Secret generated below would land in "default".
+namespace: plantorq
 resources: [../../base]
 # Throwaway demo secrets so local and CI clusters need no setup.
 secretGenerator:
