@@ -5,6 +5,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -24,14 +26,22 @@ import (
 
 func main() {
 	log := obs.NewLogger("ingestor")
+	if err := run(log); err != nil {
+		log.Error("ingestor failed", "err", err)
+		os.Exit(1)
+	}
+}
+
+// run owns the service lifetime, so deferred cleanups complete before main
+// chooses the exit code.
+func run(log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	ready := obs.StartOps(ctx, log, config.String("OPS_ADDR", ":9101"))
 
 	store := influx.New(config.String("INFLUX_URL", "http://localhost:8086"), config.String("INFLUX_DB", "plantorq"))
 	if err := waitFor(ctx, func(ctx context.Context) error { return store.EnsureDatabase(ctx) }); err != nil {
-		log.Error("influxdb unavailable", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("influxdb unavailable: %w", err)
 	}
 
 	svc := ingest.NewService(ingest.Config{
@@ -50,8 +60,8 @@ func main() {
 		r.Tenant, r.Machine = tenant, machine // the topic is authoritative
 		svc.Accept(r)
 	})
-	// $share/ingestors/... is an MQTT 5 / mosquitto shared subscription:
-	// with several replicas each message is delivered to only one of them.
+	// $share/ingestors/... is an MQTT shared subscription (supported by the
+	// Mosquitto broker): with several replicas each message reaches only one.
 	client := mqtt.Dial(log, mqtt.Options{
 		Broker:   config.String("MQTT_BROKER", "tcp://localhost:1883"),
 		ClientID: "ingestor-" + config.String("HOSTNAME", "local"),
@@ -73,6 +83,7 @@ func main() {
 	log.Info("ingestor started")
 	svc.Run(ctx)
 	log.Info("ingestor stopped")
+	return nil
 }
 
 // waitFor retries fn every 2s until it succeeds or ctx is cancelled.

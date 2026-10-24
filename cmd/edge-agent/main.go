@@ -5,6 +5,8 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -22,26 +24,36 @@ import (
 
 func main() {
 	log := obs.NewLogger("edge-agent")
+	if err := run(log); err != nil {
+		log.Error("edge agent failed", "err", err)
+		os.Exit(1)
+	}
+}
+
+// run owns the service lifetime, so every deferred cleanup (buffer file,
+// broker session) completes before main chooses the exit code.
+func run(log *slog.Logger) error {
 	configPath := flag.String("config", config.String("AGENT_CONFIG", "/etc/plantorq/agent.yaml"), "path to agent config")
 	flag.Parse()
 
 	cfg, err := loadConfig(*configPath)
 	if err != nil {
-		log.Error("invalid configuration", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("invalid configuration: %w", err)
 	}
 	machines, err := buildMachines(cfg)
 	if err != nil {
-		log.Error("cannot build device readers", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("cannot build device readers: %w", err)
 	}
 
 	queue, err := bbolt.Open(cfg.Buffer.Path, cfg.Buffer.MaxItems)
 	if err != nil {
-		log.Error("cannot open offline buffer", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("cannot open offline buffer: %w", err)
 	}
-	defer queue.Close()
+	defer func() {
+		if err := queue.Close(); err != nil {
+			log.Error("closing offline buffer failed", "err", err)
+		}
+	}()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -59,16 +71,11 @@ func main() {
 	}, machines, mqtt.TelemetryPublisher{Client: client}, bbolt.NewReadingBuffer(queue),
 		prom.NewCollector(prometheus.DefaultRegisterer), log)
 
-	// The agent is "ready" as soon as it polls: buffering covers broker outages.
-	ready := &obs.Readiness{}
-	ready.Set(true)
-	go func() {
-		if err := obs.Serve(ctx, log, config.String("OPS_ADDR", ":9100"), obs.OpsMux(ready)); err != nil {
-			log.Error("ops server failed", "err", err)
-		}
-	}()
+	// The agent is ready as soon as it polls: buffering covers broker outages.
+	obs.StartOps(ctx, log, config.String("OPS_ADDR", ":9100")).Set(true)
 
 	log.Info("edge agent started", "tenant", cfg.Tenant, "gateway", cfg.Gateway, "machines", len(machines))
 	agent.Run(ctx)
 	log.Info("edge agent stopped", "buffered", queue.Len())
+	return nil
 }

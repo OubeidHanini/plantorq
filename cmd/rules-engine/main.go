@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -23,19 +25,26 @@ import (
 
 func main() {
 	log := obs.NewLogger("rules-engine")
+	if err := run(log); err != nil {
+		log.Error("rules engine failed", "err", err)
+		os.Exit(1)
+	}
+}
+
+// run owns the service lifetime, so deferred cleanups (database pool, broker
+// session) complete before main chooses the exit code.
+func run(log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	ready := obs.StartOps(ctx, log, config.String("OPS_ADDR", ":9102"))
 
 	db, err := postgres.Open(ctx, config.String("DATABASE_URL", "postgres://plantorq:plantorq@localhost:5432/plantorq"), log)
 	if err != nil {
-		log.Error("database unavailable", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("database unavailable: %w", err)
 	}
 	defer db.Close()
 	if err := db.Migrate(ctx); err != nil {
-		log.Error("migration failed", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("migration failed: %w", err)
 	}
 
 	// The service needs the notifier, and the MQTT handlers need the service:
@@ -70,8 +79,8 @@ func main() {
 
 	log.Info("rules engine started")
 	if err := svc.Run(ctx, config.Duration("RULE_RELOAD_INTERVAL", 15*time.Second)); err != nil {
-		log.Error("rules engine failed", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("rules engine: %w", err)
 	}
 	log.Info("rules engine stopped")
+	return nil
 }

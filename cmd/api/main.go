@@ -4,7 +4,8 @@ package main
 
 import (
 	"context"
-	"net/http"
+	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -27,6 +28,15 @@ import (
 
 func main() {
 	log := obs.NewLogger("api")
+	if err := run(log); err != nil {
+		log.Error("api failed", "err", err)
+		os.Exit(1)
+	}
+}
+
+// run owns the service lifetime, so deferred cleanups (database pool, broker
+// session) complete before main chooses the exit code.
+func run(log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	ready := obs.StartOps(ctx, log, config.String("OPS_ADDR", ":9103"))
@@ -34,13 +44,11 @@ func main() {
 	// --- infrastructure ----------------------------------------------------
 	db, err := postgres.Open(ctx, config.String("DATABASE_URL", "postgres://plantorq:plantorq@localhost:5432/plantorq"), log)
 	if err != nil {
-		log.Error("database unavailable", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("database unavailable: %w", err)
 	}
 	defer db.Close()
 	if err := db.Migrate(ctx); err != nil {
-		log.Error("migration failed", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("migration failed: %w", err)
 	}
 	hasher := password.Bcrypt{}
 	if demoPassword := config.String("SEED_DEMO_PASSWORD", ""); demoPassword != "" {
@@ -49,15 +57,13 @@ func main() {
 			err = db.SeedDemo(ctx, hash)
 		}
 		if err != nil {
-			log.Error("seeding failed", "err", err)
-			os.Exit(1)
+			return fmt.Errorf("seeding failed: %w", err)
 		}
 	}
 
 	tokens, err := jwt.New(config.String("JWT_SECRET", ""), config.Duration("JWT_TTL", 12*time.Hour))
 	if err != nil {
-		log.Error("invalid JWT configuration", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("invalid JWT configuration: %w", err)
 	}
 	history := influx.New(config.String("INFLUX_URL", "http://localhost:8086"), config.String("INFLUX_DB", "plantorq"))
 
@@ -115,11 +121,12 @@ func main() {
 			ready.Set(true)
 		}
 	}()
-	if err := obs.Serve(ctx, log, config.String("HTTP_ADDR", ":8080"), server.Routes()); err != nil && err != http.ErrServerClosed {
-		log.Error("api server failed", "err", err)
-		os.Exit(1)
+	// obs.Serve already treats a graceful shutdown as success.
+	if err := obs.Serve(ctx, log, config.String("HTTP_ADDR", ":8080"), server.Routes()); err != nil {
+		return fmt.Errorf("api server: %w", err)
 	}
 	log.Info("api stopped")
+	return nil
 }
 
 func splitNonEmpty(s string) []string {
