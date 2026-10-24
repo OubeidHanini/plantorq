@@ -9,6 +9,8 @@ linters:
     - revive
     - unconvert
   settings:
+    misspell:
+      ignore-rules: [mosquitto] # the Eclipse MQTT broker, not a typo
     revive:
       rules:
         - name: exported

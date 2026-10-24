@@ -16,9 +16,17 @@ func openTemp(t *testing.T, max int) (*Queue, string) {
 	return q, path
 }
 
+// closeQueue fails the test if the database cannot be closed cleanly.
+func closeQueue(t *testing.T, q *Queue) {
+	t.Helper()
+	if err := q.Close(); err != nil {
+		t.Errorf("close queue: %v", err)
+	}
+}
+
 func TestFIFOOrderAndAck(t *testing.T) {
 	q, _ := openTemp(t, 10)
-	defer q.Close()
+	defer closeQueue(t, q)
 	for i := 0; i < 3; i++ {
 		if err := q.Push([]byte(fmt.Sprint(i))); err != nil {
 			t.Fatal(err)
@@ -45,7 +53,7 @@ func TestFIFOOrderAndAck(t *testing.T) {
 
 func TestEvictsOldestWhenFull(t *testing.T) {
 	q, _ := openTemp(t, 3)
-	defer q.Close()
+	defer closeQueue(t, q)
 	for i := 0; i < 5; i++ {
 		_ = q.Push([]byte(fmt.Sprint(i)))
 	}
@@ -62,13 +70,13 @@ func TestSurvivesRestart(t *testing.T) {
 	q, path := openTemp(t, 10)
 	_ = q.Push([]byte("a"))
 	_ = q.Push([]byte("b"))
-	q.Close()
+	closeQueue(t, q)
 
 	q2, err := Open(path, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer q2.Close()
+	defer closeQueue(t, q2)
 	if q2.Len() != 2 {
 		t.Fatalf("len after reopen = %d, want 2", q2.Len())
 	}
@@ -81,7 +89,7 @@ func TestSurvivesRestart(t *testing.T) {
 
 func TestAckOfEvictedItemIsHarmless(t *testing.T) {
 	q, _ := openTemp(t, 1)
-	defer q.Close()
+	defer closeQueue(t, q)
 	_ = q.Push([]byte("old"))
 	items, _ := q.Peek(1)
 	_ = q.Push([]byte("new")) // evicts "old"

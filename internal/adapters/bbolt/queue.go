@@ -51,8 +51,7 @@ func Open(path string, max int) (*Queue, error) {
 		return nil
 	})
 	if err != nil {
-		db.Close()
-		return nil, err
+		return nil, errors.Join(err, db.Close())
 	}
 	return q, nil
 }

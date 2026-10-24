@@ -82,9 +82,13 @@ func newTestServer() (*httptest.Server, *fakeRules) {
 	return httptest.NewServer(s.Routes()), rules
 }
 
-func do(t *testing.T, srv *httptest.Server, method, path, token, body string) (*http.Response, string) {
+// do performs a request and returns the status code and the response body.
+func do(t *testing.T, srv *httptest.Server, method, path, token, body string) (int, string) {
 	t.Helper()
-	req, _ := http.NewRequest(method, srv.URL+path, strings.NewReader(body))
+	req, err := http.NewRequestWithContext(t.Context(), method, srv.URL+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -92,9 +96,12 @@ func do(t *testing.T, srv *httptest.Server, method, path, token, body string) (*
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	return resp, string(b)
+	defer func() { _ = resp.Body.Close() }()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp.StatusCode, string(b)
 }
 
 func TestStatusMapping(t *testing.T) {
@@ -118,9 +125,9 @@ func TestStatusMapping(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp, body := do(t, srv, tt.method, tt.path, tt.token, tt.body)
-			if resp.StatusCode != tt.want {
-				t.Fatalf("status = %d, want %d (body %s)", resp.StatusCode, tt.want, body)
+			status, body := do(t, srv, tt.method, tt.path, tt.token, tt.body)
+			if status != tt.want {
+				t.Fatalf("status = %d, want %d (body %s)", status, tt.want, body)
 			}
 		})
 	}

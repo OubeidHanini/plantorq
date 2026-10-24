@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 	"strconv"
@@ -55,10 +56,17 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 func (s *Server) recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
-			if rec := recover(); rec != nil && rec != http.ErrAbortHandler {
-				s.Log.Error("panic in handler", "panic", rec, "path", r.URL.Path)
-				writeJSON(w, http.StatusInternalServerError, errorBody{"internal error"})
+			rec := recover()
+			if rec == nil {
+				return
 			}
+			// http.ErrAbortHandler is the documented way to abort a response;
+			// let net/http handle it instead of reporting a 500.
+			if err, ok := rec.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+				panic(rec)
+			}
+			s.Log.Error("panic in handler", "panic", rec, "path", r.URL.Path)
+			writeJSON(w, http.StatusInternalServerError, errorBody{"internal error"})
 		}()
 		next.ServeHTTP(w, r)
 	})

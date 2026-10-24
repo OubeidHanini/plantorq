@@ -133,7 +133,10 @@ func readPump(conn *websocket.Conn, onClose func()) {
 // writePump is the only goroutine writing to conn, as gorilla requires.
 func writePump(conn *websocket.Conn, send <-chan []byte) {
 	ticker := time.NewTicker(pingPeriod)
-	defer func() { ticker.Stop(); conn.Close() }()
+	defer func() {
+		ticker.Stop()
+		_ = conn.Close() // the peer is gone or misbehaving; nothing left to report
+	}()
 	for {
 		select {
 		case msg, ok := <-send:

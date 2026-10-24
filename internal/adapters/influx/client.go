@@ -191,7 +191,7 @@ func (c *Client) do(req *http.Request, out any) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() // read-only body: a close error changes nothing
 	if resp.StatusCode >= 300 {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Errorf("influx %s %s: %s: %s", req.Method, req.URL.Path, resp.Status, bytes.TrimSpace(msg))
