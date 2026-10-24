@@ -17,5 +17,7 @@ COPY --from=build /out/service /service
 # Writable data dir (edge-agent offline buffer); a named volume mounted here
 # inherits this ownership, so the non-root user can write to it.
 COPY --from=build --chown=65532:65532 /out/data /data
-USER nonroot:nonroot
+# Numeric UID (distroless "nonroot"): Kubernetes can only enforce
+# runAsNonRoot when the image user is numeric.
+USER 65532:65532
 ENTRYPOINT ["/service"]
