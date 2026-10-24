@@ -26,6 +26,7 @@ func main() {
 	log := obs.NewLogger("ingestor")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	ready := obs.StartOps(ctx, log, config.String("OPS_ADDR", ":9101"))
 
 	store := influx.New(config.String("INFLUX_URL", "http://localhost:8086"), config.String("INFLUX_DB", "plantorq"))
 	if err := waitFor(ctx, func(ctx context.Context) error { return store.EnsureDatabase(ctx) }); err != nil {
@@ -62,15 +63,10 @@ func main() {
 	})
 	defer client.Close()
 
-	ready := &obs.Readiness{}
+	// Ready once every dependency is up: databases above, the broker here.
 	go func() {
 		if err := client.WaitConnected(ctx); err == nil {
 			ready.Set(true)
-		}
-	}()
-	go func() {
-		if err := obs.Serve(ctx, log, config.String("OPS_ADDR", ":9101"), obs.OpsMux(ready)); err != nil {
-			log.Error("ops server failed", "err", err)
 		}
 	}()
 

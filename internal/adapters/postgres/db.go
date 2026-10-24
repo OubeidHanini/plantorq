@@ -32,8 +32,10 @@ type DB struct {
 	log  *slog.Logger
 }
 
-// Open connects with retries: in Compose and Kubernetes the database may
-// still be starting when the service boots.
+// Open connects with retries until it succeeds or ctx is cancelled: in
+// Compose and Kubernetes the database may still be starting (or pulling its
+// image) when the service boots. Liveness is served meanwhile (obs.StartOps),
+// so waiting is not mistaken for a crash.
 func Open(ctx context.Context, dsn string, log *slog.Logger) (*DB, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
@@ -48,7 +50,7 @@ func Open(ctx context.Context, dsn string, log *slog.Logger) (*DB, error) {
 			}
 			pool.Close()
 		}
-		if attempt == 30 || ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return nil, fmt.Errorf("postgres: connect: %w", err)
 		}
 		log.Warn("postgres not ready, retrying", "attempt", attempt, "err", err)

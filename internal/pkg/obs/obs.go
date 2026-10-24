@@ -48,6 +48,21 @@ func OpsMux(ready *Readiness) *http.ServeMux {
 	return mux
 }
 
+// StartOps serves /healthz, /readyz and /metrics in the background and
+// returns the readiness flag, initially false. Call it first in main: the
+// process must answer liveness probes while it waits for its dependencies,
+// otherwise Kubernetes kills it during a slow database start. Readiness is
+// set by the caller once dependencies are reachable.
+func StartOps(ctx context.Context, log *slog.Logger, addr string) *Readiness {
+	ready := &Readiness{}
+	go func() {
+		if err := Serve(ctx, log, addr, OpsMux(ready)); err != nil {
+			log.Error("ops server failed", "err", err)
+		}
+	}()
+	return ready
+}
+
 // Serve runs an HTTP server until ctx is cancelled, then shuts it down
 // gracefully.
 func Serve(ctx context.Context, log *slog.Logger, addr string, h http.Handler) error {

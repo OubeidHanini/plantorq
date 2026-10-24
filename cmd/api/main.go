@@ -29,6 +29,7 @@ func main() {
 	log := obs.NewLogger("api")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	ready := obs.StartOps(ctx, log, config.String("OPS_ADDR", ":9103"))
 
 	// --- infrastructure ----------------------------------------------------
 	db, err := postgres.Open(ctx, config.String("DATABASE_URL", "postgres://plantorq:plantorq@localhost:5432/plantorq"), log)
@@ -108,15 +109,10 @@ func main() {
 	})
 
 	// --- servers -----------------------------------------------------------
-	ready := &obs.Readiness{}
+	// Ready once every dependency is up: databases above, the broker here.
 	go func() {
 		if err := client.WaitConnected(ctx); err == nil {
 			ready.Set(true)
-		}
-	}()
-	go func() {
-		if err := obs.Serve(ctx, log, config.String("OPS_ADDR", ":9103"), obs.OpsMux(ready)); err != nil {
-			log.Error("ops server failed", "err", err)
 		}
 	}()
 	if err := obs.Serve(ctx, log, config.String("HTTP_ADDR", ":8080"), server.Routes()); err != nil && err != http.ErrServerClosed {
