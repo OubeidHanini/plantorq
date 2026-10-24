@@ -66,7 +66,9 @@ func NewServer(d Deps) *Server { return &Server{Deps: d} }
 // Routes builds the HTTP handler.
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID, middleware.RealIP, s.recoverer, s.logRequests, instrument, s.cors)
+	// No RealIP middleware: it trusts client-supplied X-Forwarded-For headers
+	// (IP spoofing). The API needs no client IP; a trusted proxy would set it.
+	r.Use(middleware.RequestID, s.recoverer, s.logRequests, instrument, s.cors)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/auth/login", s.login)
